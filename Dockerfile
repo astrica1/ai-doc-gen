@@ -1,4 +1,4 @@
-FROM python:3.13 AS builder
+FROM astral/uv:0.8.3-debian AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -6,17 +6,17 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install uv and dependencies
-RUN pip install --no-cache-dir uv
+# Copy pyproject and lockfile
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+
+# Install dependencies globally (not in .venv)
+RUN uv sync --frozen
 
 # Copy source code
 COPY src ./src
 
-# Final stage: minimal image
-FROM python:3.13-slim AS final
+
+FROM astral/uv:0.8.3-debian AS final
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,11 +24,13 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install uv only (for running)
-RUN pip install --no-cache-dir uv
+# Install git (if needed for your cronjob tasks)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Copy only installed packages and source code from builder
-COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src ./src
+
+ENV PATH="/app/.venv/bin:$PATH"
+
 
 CMD ["uv", "run", "ai-doc-gen"]
